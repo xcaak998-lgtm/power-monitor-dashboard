@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>電力監測與趨勢分析系統</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#0b1220;--panel:#121d30;--panel2:#18263c;--line:#263750;--text:#edf4ff;--muted:#9aacc4;--accent:#38bdf8;--green:#34d399}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,#0b1220,#101a2b);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:22px 18px 16px;border-bottom:1px solid var(--line);background:#0b1220}
+.wrap{max-width:1180px;margin:auto}
+.eyebrow{font-size:12px;letter-spacing:1.5px;color:var(--accent);font-weight:700}
+h1{font-size:clamp(23px,4vw,34px);margin:8px 0}
+.sub{color:var(--muted);font-size:14px}
+main{max-width:1180px;margin:auto;padding:18px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px}
+button,select{border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:11px 14px;border-radius:10px;font-size:14px}
+button{cursor:pointer}
+button.primary{background:#075985;border-color:#0284c7}
+.status{font-size:13px;color:var(--muted);margin-left:auto}
+.layout{display:grid;grid-template-columns:230px 1fr;gap:16px}
+nav,.panel,.metric{background:var(--panel);border:1px solid var(--line);border-radius:15px}
+nav{padding:14px;height:max-content}
+nav h3{font-size:13px;color:var(--muted);margin:4px 8px 10px}
+.navbtn{display:block;width:100%;text-align:left;margin:5px 0;background:transparent;border-color:transparent}
+.navbtn.active,.metric.active{border-color:var(--accent);background:#102b43}
+.content{min-width:0}
+.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.metric{padding:13px;cursor:pointer;min-width:0}
+.metric .name{font-size:13px;color:var(--muted);min-height:34px}
+.metric .value{font-size:clamp(19px,3vw,27px);font-weight:750;margin:7px 0;overflow-wrap:anywhere}
+.metric .unit{font-size:12px;color:var(--muted)}
+.panel{padding:16px;margin-bottom:16px}
+.panelhead{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:center}
+.panel h2{font-size:18px;margin:0 0 6px}
+.bigvalue{font-size:clamp(28px,5vw,42px);font-weight:800;margin:10px 0 2px}
+.meta{color:var(--muted);font-size:13px}
+.chartbox{height:270px;margin-top:12px;position:relative}
+canvas{width:100%;height:100%;display:block}
+.legend{color:var(--muted);font-size:12px;margin-top:8px}
+.notice{padding:12px;border-radius:10px;background:#17283d;color:#c6d8ee;font-size:13px;line-height:1.6}
+.analysis-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+.stat .label{font-size:12px;color:var(--muted)}.stat .number{font-size:20px;font-weight:750;margin-top:6px;overflow-wrap:anywhere}
+.filter-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-top:12px}
+.filter-row label{display:grid;gap:5px;color:var(--muted);font-size:12px}
+.filter-row input{min-width:0;border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:10px;border-radius:9px}
+.alert-ok{color:#34d399}.alert-warn{color:#fbbf24}
+@media(max-width:520px){.analysis-grid{grid-template-columns:1fr 1fr}.analysis-grid .stat:last-child{grid-column:1/-1}}
+footer{padding:20px;text-align:center;color:var(--muted);font-size:12px}
+@media(max-width:760px){.layout{grid-template-columns:1fr}nav{display:flex;gap:7px;overflow-x:auto;padding:9px}nav h3{display:none}.navbtn{white-space:nowrap;width:auto;margin:0}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.status{width:100%;margin-left:0}.chartbox{height:230px}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+ <div class="eyebrow">POWER MONITORING</div>
+ <h1>電力監測與趨勢分析系統</h1>
+ <div class="sub">依據 20261114_每3分鐘時間版.xlsx · 互動式歷史資料播放</div>
+</div></header>
+<main>
+ <div class="toolbar">
+  <button id="playBtn" class="primary">▶ 開始播放</button>
+  <button id="pauseBtn">Ⅱ 暫停</button>
+  <button id="restartBtn">↺ 從頭播放</button>
+  <label class="sub">播放速度
+   <select id="speed"><option value="2500">一般（2.5 秒/筆）</option><option value="1500">較快（1.5 秒/筆）</option><option value="4000">較慢（4 秒/筆）</option></select>
+  </label>
+  <div class="status" id="status">正在載入 Excel 資料…</div>
+ </div>
+ <div class="layout">
+  <nav id="nav">
+   <h3>監測分類</h3>
+   <button class="navbtn active" data-group="all">全部項目</button>
+   <button class="navbtn" data-group="total">總電力</button>
+   <button class="navbtn" data-group="a">A 相監測</button>
+   <button class="navbtn" data-group="b">B 相監測</button>
+   <button class="navbtn" data-group="harmonic">諧波分析</button>
+  </nav>
+  <section class="content">
+   <div class="panel">
+    <div class="panelhead"><div><h2 id="sectionTitle">全部監測項目</h2><div class="meta">點選任一數值卡片，可查看該項目的專屬趨勢圖</div></div></div>
+    <div class="metrics" id="metrics"></div>
+   </div>
+   <div class="panel">
+    <div class="panelhead"><div><h2 id="chartTitle">項目趨勢圖</h2><div class="meta" id="chartDesc">尚未選擇項目</div></div></div>
+    <div class="bigvalue" id="currentValue">—</div>
+    <div class="meta" id="currentTime">目前資料時間：—</div>
+    <div class="chartbox"><canvas id="chart"></canvas></div>
+    <div class="legend">折線顯示目前播放位置之前的歷史資料；資料時間間隔為 3 分鐘。</div>
+   </div>
+
+   <div class="panel">
+    <div class="panelhead">
+     <div><h2>資料統計分析</h2><div class="meta" id="filterStatus">等待資料載入…</div></div>
+     <button id="exportBtn">匯出篩選資料 Excel</button>
+    </div>
+    <div class="filter-row">
+     <label>開始日期<input type="date" id="dateStart"></label>
+     <label>結束日期<input type="date" id="dateEnd"></label>
+     <button id="applyFilter" class="primary">套用日期範圍</button>
+     <button id="clearFilter">清除篩選</button>
+    </div>
+    <div class="analysis-grid">
+     <div class="stat"><div class="label">目前選取項目最大值</div><div class="number" id="statMax">—</div></div>
+     <div class="stat"><div class="label">目前選取項目最小值</div><div class="number" id="statMin">—</div></div>
+     <div class="stat"><div class="label">目前選取項目平均值</div><div class="number" id="statAvg">—</div></div>
+    </div>
+    <div class="filter-row">
+     <label>數值提醒上限<input type="number" id="alertLimit" step="any" placeholder="輸入上限值"></label>
+     <button id="setAlert">設定提醒</button>
+     <button id="clearAlert">清除提醒</button>
+    </div>
+    <div class="meta" id="alertStatus">尚未設定提醒</div>
+   </div>
+
+   <div class="notice" id="notice">資料來源為 Excel 歷史紀錄。播放功能會依序讀取資料列，模擬數值更新；並非連接現場電力設備的即時感測資料。</div>
+  </section>
+ </div>
+</main>
+<footer>Power Monitoring Dashboard · GitHub Pages</footer>
+<script>
+const FILE_NAME = "20261114_每3分鐘時間版.xlsx";
+const metrics = [
+ {key:"Total AP (VA)",label:"總視在功率",unit:"VA",group:"total"},
+ {key:"Total P (W)",label:"總有功功率",unit:"W",group:"total"},
+ {key:"Total Q (Var)",label:"總無功功率",unit:"Var",group:"total"},
+ {key:"Total pf",label:"總功率因數",unit:"",group:"total"},
+ {key:"AP_A (VA)",label:"A 相視在功率",unit:"VA",group:"a"},
+ {key:"P_A (W)",label:"A 相有功功率",unit:"W",group:"a"},
+ {key:"Q_A (Var)",label:"A 相無功功率",unit:"Var",group:"a"},
+ {key:"pf_A",label:"A 相功率因數",unit:"",group:"a"},
+ {key:"V_THD_A (%)",label:"A 相電壓總諧波失真率",unit:"%",group:"harmonic"},
+ {key:"I_THD_A (%)",label:"A 相電流總諧波失真率",unit:"%",group:"harmonic"},
+ {key:"AP_B (VA)",label:"B 相視在功率",unit:"VA",group:"b"},
+ {key:"P_B (W)",label:"B 相有功功率",unit:"W",group:"b"},
+ {key:"Q_B (Var)",label:"B 相無功功率",unit:"Var",group:"b"},
+ {key:"pf_B",label:"B 相功率因數",unit:"",group:"b"},
+ {key:"V_THD_B (%)",label:"B 相電壓總諧波失真率",unit:"%",group:"harmonic"},
+ {key:"I_THD_B (%)",label:"B 相電流總諧波失真率",unit:"%",group:"harmonic"},
+ {key:"I_THD_N (%)",label:"中性線電流總諧波失真率",unit:"%",group:"harmonic"}
+];
+let rows=[], allRows=[], index=0, timer=null, selected=metrics[0], activeGroup="all", alertLimit=null;
+const $=id=>document.getElementById(id);
+function fmt(v){return Number(v).toLocaleString("zh-TW",{maximumFractionDigits:3});}
+function timeText(v){const d=v instanceof Date?v:new Date(v);return isNaN(d)?String(v):d.toLocaleString("zh-TW",{hour12:false});}
+function visibleMetrics(){return activeGroup==="all"?metrics:metrics.filter(m=>m.group===activeGroup);}
+function updateStats(){
+ if(!selected || !$("statMax"))return;
+ const vals=rows.map(r=>Number(r[selected.key])).filter(Number.isFinite);
+ if(!vals.length){$("statMax").textContent=$("statMin").textContent=$("statAvg").textContent="—";return;}
+ const max=Math.max(...vals),min=Math.min(...vals),avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+ $("statMax").textContent=fmt(max)+(selected.unit?" "+selected.unit:"");
+ $("statMin").textContent=fmt(min)+(selected.unit?" "+selected.unit:"");
+ $("statAvg").textContent=fmt(avg)+(selected.unit?" "+selected.unit:"");
+ $("filterStatus").textContent=`目前顯示 ${rows.length} / ${allRows.length} 筆資料`;
+}
+function applyDateFilter(){
+ const start=$("dateStart").value,end=$("dateEnd").value;
+ rows=allRows.filter(r=>{
+  const d=new Date(r.Time); if(isNaN(d))return false;
+  const day=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return (!start||day>=start)&&(!end||day<=end);
+ });
+ stop();index=0;
+ if(!rows.length){$("status").textContent="此日期範圍沒有資料";renderCards();renderChart();updateStats();return;}
+ renderCurrent();updateStats();
+}
+function checkAlert(){
+ const v=Number(rows[index]?.[selected.key]);
+ const el=$("alertStatus");
+ if(alertLimit===null){el.textContent="尚未設定提醒";el.className="meta";return;}
+ if(Number.isFinite(v)&&v>alertLimit){
+  el.textContent=`提醒：${selected.label}目前為 ${fmt(v)}，已超過上限 ${fmt(alertLimit)}`;
+  el.className="meta alert-warn";
+ }else{
+  el.textContent=`正常：${selected.label}目前未超過上限 ${fmt(alertLimit)}`;
+  el.className="meta alert-ok";
+ }
+}
+function exportData(){
+ if(!rows.length){$("filterStatus").textContent="目前沒有可匯出的資料";return;}
+ const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(wb,ws,"篩選資料");
+ XLSX.writeFile(wb,"電力監測篩選資料.xlsx");
+}
+function renderCards(){
+ $("sectionTitle").textContent=({all:"全部監測項目",total:"總電力",a:"A 相監測",b:"B 相監測",harmonic:"諧波分析"})[activeGroup];
+ $("metrics").innerHTML="";
+ visibleMetrics().forEach(m=>{
+  const v=rows.length?rows[index][m.key]:null;
+  const el=document.createElement("button");el.className="metric"+(selected.key===m.key?" active":"");
+  el.innerHTML=`<div class="name">${m.label}</div><div class="value">${v==null?"—":fmt(v)}</div><div class="unit">${m.unit||"無單位"}</div>`;
+  el.addEventListener("click",()=>{selected=m;renderCards();renderChart();updateStats();checkAlert();});
+  $("metrics").appendChild(el);
+ });
+}
+function renderCurrent(){
+ if(!rows.length)return;
+ const r=rows[index],v=r[selected.key];
+ $("currentValue").textContent=fmt(v)+(selected.unit?" "+selected.unit:"");
+ $("currentTime").textContent="目前資料時間："+timeText(r.Time);
+ $("status").textContent=`資料 ${index+1} / ${rows.length} · 播放${timer?"中":"已暫停"}`;
+ renderCards();renderChart();updateStats();checkAlert();
+}
+function drawChart(){
+ const canvas=$("chart"),ctx=canvas.getContext("2d"),box=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+ canvas.width=Math.max(1,box.width*dpr);canvas.height=Math.max(1,box.height*dpr);ctx.scale(dpr,dpr);
+ const w=box.width,h=box.height,p={l:48,r:12,t:15,b:35};
+ ctx.clearRect(0,0,w,h);
+ const vals=rows.slice(0,index+1).map(r=>Number(r[selected.key])).filter(Number.isFinite);
+ if(vals.length<1){ctx.fillStyle="#9aacc4";ctx.fillText("等待資料…",p.l,40);return;}
+ let min=Math.min(...vals),max=Math.max(...vals);if(min===max){min-=1;max+=1;}
+ const x=i=>p.l+(w-p.l-p.r)*(vals.length===1?0:i/(vals.length-1));
+ const y=v=>p.t+(h-p.t-p.b)*(1-(v-min)/(max-min));
+ ctx.font="11px sans-serif";ctx.strokeStyle="#263750";ctx.fillStyle="#9aacc4";ctx.lineWidth=1;
+ for(let i=0;i<5;i++){const yy=p.t+(h-p.t-p.b)*i/4;ctx.beginPath();ctx.moveTo(p.l,yy);ctx.lineTo(w-p.r,yy);ctx.stroke();const val=max-(max-min)*i/4;ctx.fillText(val.toFixed(2),3,yy+4);}
+ ctx.strokeStyle="#38bdf8";ctx.lineWidth=2.5;ctx.beginPath();
+ vals.forEach((v,i)=>{if(i===0)ctx.moveTo(x(i),y(v));else ctx.lineTo(x(i),y(v));});ctx.stroke();
+ ctx.fillStyle="#38bdf8";ctx.beginPath();ctx.arc(x(vals.length-1),y(vals[vals.length-1]),4,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#9aacc4";ctx.fillText("資料筆數："+vals.length,p.l,h-9);
+}
+function renderChart(){
+ $("chartTitle").textContent=selected.label+" 趨勢圖";
+ $("chartDesc").textContent=selected.key+(selected.unit?" · 單位 "+selected.unit:"");
+ if(rows.length){$("currentValue").textContent=fmt(rows[index][selected.key])+(selected.unit?" "+selected.unit:"");}
+ drawChart();updateStats();checkAlert();
+}
+function stop(){if(timer){clearInterval(timer);timer=null;}if(rows.length)$("status").textContent=`資料 ${index+1} / ${rows.length} · 已暫停`;}
+function play(){if(!rows.length)return;stop();timer=setInterval(()=>{index=(index+1)%rows.length;renderCurrent();},Number($("speed").value));$("status").textContent=`資料 ${index+1} / ${rows.length} · 播放中`;}
+async function load(){
+ try{
+  const res=await fetch(FILE_NAME);if(!res.ok)throw new Error("找不到 Excel 檔案（HTTP "+res.status+"）");
+  const buf=await res.arrayBuffer(),book=XLSX.read(buf,{type:"array",cellDates:true});
+  const sheet=book.Sheets[book.SheetNames[0]];
+  allRows=XLSX.utils.sheet_to_json(sheet,{defval:null});
+  if(!allRows.length)throw new Error("Excel 沒有資料列");
+  rows=allRows.slice();
+  const dates=allRows.map(r=>new Date(r.Time)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
+  if(dates.length){
+   const f=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+   $("dateStart").value=f(dates[0]);$("dateEnd").value=f(dates[dates.length-1]);
+  }
+  $("notice").textContent=`已載入 ${rows.length} 筆歷史資料。每筆時間相隔 3 分鐘；播放時每隔數秒切換一筆，僅為歷史資料模擬播放。`;
+  index=0;renderCurrent();updateStats();
+ }catch(e){$("status").textContent="載入失敗："+e.message;$("notice").textContent="請確認新版 Excel 與 index.html 放在 GitHub 儲存庫同一層，且檔名完全一致。若 GitHub Pages 尚未啟用，先完成 Pages 設定後再測試。";}
+}
+document.querySelectorAll(".navbtn").forEach(b=>b.addEventListener("click",()=>{activeGroup=b.dataset.group;document.querySelectorAll(".navbtn").forEach(x=>x.classList.toggle("active",x===b));const list=visibleMetrics();if(!list.some(m=>m.key===selected.key))selected=list[0];renderCards();renderChart();updateStats();checkAlert();}));
+$("playBtn").addEventListener("click",play);$("pauseBtn").addEventListener("click",stop);
+$("restartBtn").addEventListener("click",()=>{stop();index=0;renderCurrent();play();});
+$("speed").addEventListener("change",()=>{if(timer)play();});
+$("applyFilter").addEventListener("click",applyDateFilter);
+$("clearFilter").addEventListener("click",()=>{$("dateStart").value="";$("dateEnd").value="";rows=allRows.slice();stop();index=0;renderCurrent();updateStats();});
+$("exportBtn").addEventListener("click",exportData);
+$("setAlert").addEventListener("click",()=>{const v=$("alertLimit").value;alertLimit=v===""?null:Number(v);checkAlert();});
+$("clearAlert").addEventListener("click",()=>{alertLimit=null;$("alertLimit").value="";checkAlert();});
+window.addEventListener("resize",drawChart);
+load();
+</script>
+</body>
+</html>

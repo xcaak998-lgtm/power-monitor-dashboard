@@ -142,13 +142,21 @@ const metrics = [
  {key:"I_THD_N (%)",label:"中性線電流總諧波失真率",unit:"%",group:"harmonic"}
 ];
 let rows=[], allRows=[], index=0, timer=null, selected=metrics[0], activeGroup="all", alertLimit=null;
+let excelDate1904=false;
 const $=id=>document.getElementById(id);
 function fmt(v){return Number(v).toLocaleString("zh-TW",{maximumFractionDigits:3});}
 function parseTime(v){
  if(v instanceof Date)return v;
- if(typeof v==="number" && window.XLSX){
-  const p=XLSX.SSF.parse_date_code(v);
-  if(p)return new Date(p.y,p.m-1,p.d,p.H,p.M,p.S,Math.round((p.u||0)*1000));
+ if(typeof v==="number"){
+  if(excelDate1904){
+   const ms=Date.UTC(1904,0,1)+v*86400000;
+   const u=new Date(ms);
+   return new Date(u.getUTCFullYear(),u.getUTCMonth(),u.getUTCDate(),u.getUTCHours(),u.getUTCMinutes(),u.getUTCSeconds(),u.getUTCMilliseconds());
+  }
+  if(window.XLSX){
+   const p=XLSX.SSF.parse_date_code(v);
+   if(p)return new Date(p.y,p.m-1,p.d,p.H,p.M,p.S,Math.round((p.u||0)*1000));
+  }
  }
  const s=String(v??"").trim();
  const m=s.match(/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})(?:[ T](\d{1,2})[.:](\d{1,2})[.:](\d{1,2})(?:[.,](\d+))?)?/);
@@ -246,7 +254,8 @@ function play(){if(!rows.length)return;stop();timer=setInterval(()=>{index=(inde
 async function load(){
  try{
   const res=await fetch(FILE_NAME);if(!res.ok)throw new Error("找不到 Excel 檔案（HTTP "+res.status+"）");
-  const buf=await res.arrayBuffer(),book=XLSX.read(buf,{type:"array",cellDates:true});
+  const buf=await res.arrayBuffer(),book=XLSX.read(buf,{type:"array",cellDates:false});
+  excelDate1904=!!(book.Workbook&&book.Workbook.WBProps&&book.Workbook.WBProps.date1904);
   const sheet=book.Sheets[book.SheetNames[0]];
   allRows=XLSX.utils.sheet_to_json(sheet,{defval:null});
   if(!allRows.length)throw new Error("Excel 沒有資料列");

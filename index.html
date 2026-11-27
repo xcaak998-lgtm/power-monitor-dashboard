@@ -144,7 +144,21 @@ const metrics = [
 let rows=[], allRows=[], index=0, timer=null, selected=metrics[0], activeGroup="all", alertLimit=null;
 const $=id=>document.getElementById(id);
 function fmt(v){return Number(v).toLocaleString("zh-TW",{maximumFractionDigits:3});}
-function timeText(v){const d=v instanceof Date?v:new Date(v);return isNaN(d)?String(v):d.toLocaleString("zh-TW",{hour12:false});}
+function parseTime(v){
+ if(v instanceof Date)return v;
+ if(typeof v==="number" && window.XLSX){
+  const p=XLSX.SSF.parse_date_code(v);
+  if(p)return new Date(p.y,p.m-1,p.d,p.H,p.M,p.S,Math.round((p.u||0)*1000));
+ }
+ const s=String(v??"").trim();
+ const m=s.match(/^(\\d{4})[.\\/-](\\d{1,2})[.\\/-](\\d{1,2})(?:[ T](\\d{1,2})[.:](\\d{1,2})[.:](\\d{1,2})(?:[.,](\\d+))?)?/);
+ if(m){
+  const ms=m[7]?Number((m[7]+"000").slice(0,3)):0;
+  return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),Number(m[4]||0),Number(m[5]||0),Number(m[6]||0),ms);
+ }
+ return new Date(s);
+}
+function timeText(v){const d=parseTime(v);return isNaN(d)?String(v):d.toLocaleString("zh-TW",{hour12:false});}
 function visibleMetrics(){return activeGroup==="all"?metrics:metrics.filter(m=>m.group===activeGroup);}
 function updateStats(){
  if(!selected || !$("statMax"))return;
@@ -159,7 +173,7 @@ function updateStats(){
 function applyDateFilter(){
  const start=$("dateStart").value,end=$("dateEnd").value;
  rows=allRows.filter(r=>{
-  const d=new Date(r.Time); if(isNaN(d))return false;
+  const d=parseTime(r.Time); if(isNaN(d))return false;
   const day=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   return (!start||day>=start)&&(!end||day<=end);
  });
@@ -237,7 +251,7 @@ async function load(){
   allRows=XLSX.utils.sheet_to_json(sheet,{defval:null});
   if(!allRows.length)throw new Error("Excel 沒有資料列");
   rows=allRows.slice();
-  const dates=allRows.map(r=>new Date(r.Time)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
+  const dates=allRows.map(r=>parseTime(r.Time)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
   if(dates.length){
    const f=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
    $("dateStart").value=f(dates[0]);$("dateEnd").value=f(dates[dates.length-1]);

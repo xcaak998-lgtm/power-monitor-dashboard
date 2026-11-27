@@ -203,7 +203,13 @@ function checkAlert(){
 }
 function exportData(){
  if(!rows.length){$("filterStatus").textContent="目前沒有可匯出的資料";return;}
- const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();
+ // 將 Excel 1904 日期系統的時間轉成明確日期文字，避免匯出後被當成 1900 系統序號
+ const exportRows=rows.map(r=>{
+  const d=parseTime(r.Time);
+  const timeValue=isNaN(d)?String(r.Time??""):`${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`;
+  return {...r,Time:timeValue};
+ });
+ const ws=XLSX.utils.json_to_sheet(exportRows),wb=XLSX.utils.book_new();
  XLSX.utils.book_append_sheet(wb,ws,"篩選資料");
  XLSX.writeFile(wb,"電力監測篩選資料.xlsx");
 }

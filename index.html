@@ -90,6 +90,31 @@ footer{padding:20px;text-align:center;color:var(--muted);font-size:12px}
     <div class="chartbox"><canvas id="chart"></canvas></div>
     <div class="legend">折線顯示目前播放位置之前的歷史資料；資料時間間隔為 3 分鐘。</div>
    </div>
+
+   <div class="panel">
+    <div class="panelhead">
+     <div><h2>資料統計分析</h2><div class="meta" id="filterStatus">等待資料載入…</div></div>
+     <button id="exportBtn">匯出篩選資料 Excel</button>
+    </div>
+    <div class="filter-row">
+     <label>開始日期<input type="date" id="dateStart"></label>
+     <label>結束日期<input type="date" id="dateEnd"></label>
+     <button id="applyFilter" class="primary">套用日期範圍</button>
+     <button id="clearFilter">清除篩選</button>
+    </div>
+    <div class="analysis-grid">
+     <div class="stat"><div class="label">目前選取項目最大值</div><div class="number" id="statMax">—</div></div>
+     <div class="stat"><div class="label">目前選取項目最小值</div><div class="number" id="statMin">—</div></div>
+     <div class="stat"><div class="label">目前選取項目平均值</div><div class="number" id="statAvg">—</div></div>
+    </div>
+    <div class="filter-row">
+     <label>數值提醒上限<input type="number" id="alertLimit" step="any" placeholder="輸入上限值"></label>
+     <button id="setAlert">設定提醒</button>
+     <button id="clearAlert">清除提醒</button>
+    </div>
+    <div class="meta" id="alertStatus">尚未設定提醒</div>
+   </div>
+
    <div class="notice" id="notice">資料來源為 Excel 歷史紀錄。播放功能會依序讀取資料列，模擬數值更新；並非連接現場電力設備的即時感測資料。</div>
   </section>
  </div>
@@ -122,6 +147,7 @@ function fmt(v){return Number(v).toLocaleString("zh-TW",{maximumFractionDigits:3
 function timeText(v){const d=v instanceof Date?v:new Date(v);return isNaN(d)?String(v):d.toLocaleString("zh-TW",{hour12:false});}
 function visibleMetrics(){return activeGroup==="all"?metrics:metrics.filter(m=>m.group===activeGroup);}
 function updateStats(){
+ if(!selected || !$("statMax"))return;
  const vals=rows.map(r=>Number(r[selected.key])).filter(Number.isFinite);
  if(!vals.length){$("statMax").textContent=$("statMin").textContent=$("statAvg").textContent="—";return;}
  const max=Math.max(...vals),min=Math.min(...vals),avg=vals.reduce((a,b)=>a+b,0)/vals.length;

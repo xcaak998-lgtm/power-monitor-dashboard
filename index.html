@@ -41,6 +41,14 @@ nav h3{font-size:13px;color:var(--muted);margin:4px 8px 10px}
 canvas{width:100%;height:100%;display:block}
 .legend{color:var(--muted);font-size:12px;margin-top:8px}
 .notice{padding:12px;border-radius:10px;background:#17283d;color:#c6d8ee;font-size:13px;line-height:1.6}
+.analysis-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+.stat .label{font-size:12px;color:var(--muted)}.stat .number{font-size:20px;font-weight:750;margin-top:6px;overflow-wrap:anywhere}
+.filter-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-top:12px}
+.filter-row label{display:grid;gap:5px;color:var(--muted);font-size:12px}
+.filter-row input{min-width:0;border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:10px;border-radius:9px}
+.alert-ok{color:#34d399}.alert-warn{color:#fbbf24}
+@media(max-width:520px){.analysis-grid{grid-template-columns:1fr 1fr}.analysis-grid .stat:last-child{grid-column:1/-1}}
 footer{padding:20px;text-align:center;color:var(--muted);font-size:12px}
 @media(max-width:760px){.layout{grid-template-columns:1fr}nav{display:flex;gap:7px;overflow-x:auto;padding:9px}nav h3{display:none}.navbtn{white-space:nowrap;width:auto;margin:0}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.status{width:100%;margin-left:0}.chartbox{height:230px}}
 </style>
@@ -108,11 +116,49 @@ const metrics = [
  {key:"I_THD_B (%)",label:"B 相電流總諧波失真率",unit:"%",group:"harmonic"},
  {key:"I_THD_N (%)",label:"中性線電流總諧波失真率",unit:"%",group:"harmonic"}
 ];
-let rows=[], index=0, timer=null, selected=metrics[0], activeGroup="all";
+let rows=[], allRows=[], index=0, timer=null, selected=metrics[0], activeGroup="all", alertLimit=null;
 const $=id=>document.getElementById(id);
 function fmt(v){return Number(v).toLocaleString("zh-TW",{maximumFractionDigits:3});}
 function timeText(v){const d=v instanceof Date?v:new Date(v);return isNaN(d)?String(v):d.toLocaleString("zh-TW",{hour12:false});}
 function visibleMetrics(){return activeGroup==="all"?metrics:metrics.filter(m=>m.group===activeGroup);}
+function updateStats(){
+ const vals=rows.map(r=>Number(r[selected.key])).filter(Number.isFinite);
+ if(!vals.length){$("statMax").textContent=$("statMin").textContent=$("statAvg").textContent="—";return;}
+ const max=Math.max(...vals),min=Math.min(...vals),avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+ $("statMax").textContent=fmt(max)+(selected.unit?" "+selected.unit:"");
+ $("statMin").textContent=fmt(min)+(selected.unit?" "+selected.unit:"");
+ $("statAvg").textContent=fmt(avg)+(selected.unit?" "+selected.unit:"");
+ $("filterStatus").textContent=`目前顯示 ${rows.length} / ${allRows.length} 筆資料`;
+}
+function applyDateFilter(){
+ const start=$("dateStart").value,end=$("dateEnd").value;
+ rows=allRows.filter(r=>{
+  const d=new Date(r.Time); if(isNaN(d))return false;
+  const day=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return (!start||day>=start)&&(!end||day<=end);
+ });
+ stop();index=0;
+ if(!rows.length){$("status").textContent="此日期範圍沒有資料";renderCards();renderChart();updateStats();return;}
+ renderCurrent();updateStats();
+}
+function checkAlert(){
+ const v=Number(rows[index]?.[selected.key]);
+ const el=$("alertStatus");
+ if(alertLimit===null){el.textContent="尚未設定提醒";el.className="meta";return;}
+ if(Number.isFinite(v)&&v>alertLimit){
+  el.textContent=`提醒：${selected.label}目前為 ${fmt(v)}，已超過上限 ${fmt(alertLimit)}`;
+  el.className="meta alert-warn";
+ }else{
+  el.textContent=`正常：${selected.label}目前未超過上限 ${fmt(alertLimit)}`;
+  el.className="meta alert-ok";
+ }
+}
+function exportData(){
+ if(!rows.length){$("filterStatus").textContent="目前沒有可匯出的資料";return;}
+ const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(wb,ws,"篩選資料");
+ XLSX.writeFile(wb,"電力監測篩選資料.xlsx");
+}
 function renderCards(){
  $("sectionTitle").textContent=({all:"全部監測項目",total:"總電力",a:"A 相監測",b:"B 相監測",harmonic:"諧波分析"})[activeGroup];
  $("metrics").innerHTML="";
@@ -120,7 +166,7 @@ function renderCards(){
   const v=rows.length?rows[index][m.key]:null;
   const el=document.createElement("button");el.className="metric"+(selected.key===m.key?" active":"");
   el.innerHTML=`<div class="name">${m.label}</div><div class="value">${v==null?"—":fmt(v)}</div><div class="unit">${m.unit||"無單位"}</div>`;
-  el.addEventListener("click",()=>{selected=m;renderCards();renderChart();});
+  el.addEventListener("click",()=>{selected=m;renderCards();renderChart();updateStats();checkAlert();});
   $("metrics").appendChild(el);
  });
 }
@@ -130,7 +176,7 @@ function renderCurrent(){
  $("currentValue").textContent=fmt(v)+(selected.unit?" "+selected.unit:"");
  $("currentTime").textContent="目前資料時間："+timeText(r.Time);
  $("status").textContent=`資料 ${index+1} / ${rows.length} · 播放${timer?"中":"已暫停"}`;
- renderCards();renderChart();
+ renderCards();renderChart();updateStats();checkAlert();
 }
 function drawChart(){
  const canvas=$("chart"),ctx=canvas.getContext("2d"),box=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
@@ -153,7 +199,7 @@ function renderChart(){
  $("chartTitle").textContent=selected.label+" 趨勢圖";
  $("chartDesc").textContent=selected.key+(selected.unit?" · 單位 "+selected.unit:"");
  if(rows.length){$("currentValue").textContent=fmt(rows[index][selected.key])+(selected.unit?" "+selected.unit:"");}
- drawChart();
+ drawChart();updateStats();checkAlert();
 }
 function stop(){if(timer){clearInterval(timer);timer=null;}if(rows.length)$("status").textContent=`資料 ${index+1} / ${rows.length} · 已暫停`;}
 function play(){if(!rows.length)return;stop();timer=setInterval(()=>{index=(index+1)%rows.length;renderCurrent();},Number($("speed").value));$("status").textContent=`資料 ${index+1} / ${rows.length} · 播放中`;}
@@ -162,16 +208,27 @@ async function load(){
   const res=await fetch(FILE_NAME);if(!res.ok)throw new Error("找不到 Excel 檔案（HTTP "+res.status+"）");
   const buf=await res.arrayBuffer(),book=XLSX.read(buf,{type:"array",cellDates:true});
   const sheet=book.Sheets[book.SheetNames[0]];
-  rows=XLSX.utils.sheet_to_json(sheet,{defval:null});
-  if(!rows.length)throw new Error("Excel 沒有資料列");
+  allRows=XLSX.utils.sheet_to_json(sheet,{defval:null});
+  if(!allRows.length)throw new Error("Excel 沒有資料列");
+  rows=allRows.slice();
+  const dates=allRows.map(r=>new Date(r.Time)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
+  if(dates.length){
+   const f=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+   $("dateStart").value=f(dates[0]);$("dateEnd").value=f(dates[dates.length-1]);
+  }
   $("notice").textContent=`已載入 ${rows.length} 筆歷史資料。每筆時間相隔 3 分鐘；播放時每隔數秒切換一筆，僅為歷史資料模擬播放。`;
-  index=0;renderCurrent();
+  index=0;renderCurrent();updateStats();
  }catch(e){$("status").textContent="載入失敗："+e.message;$("notice").textContent="請確認新版 Excel 與 index.html 放在 GitHub 儲存庫同一層，且檔名完全一致。若 GitHub Pages 尚未啟用，先完成 Pages 設定後再測試。";}
 }
-document.querySelectorAll(".navbtn").forEach(b=>b.addEventListener("click",()=>{activeGroup=b.dataset.group;document.querySelectorAll(".navbtn").forEach(x=>x.classList.toggle("active",x===b));const list=visibleMetrics();if(!list.some(m=>m.key===selected.key))selected=list[0];renderCards();renderChart();}));
+document.querySelectorAll(".navbtn").forEach(b=>b.addEventListener("click",()=>{activeGroup=b.dataset.group;document.querySelectorAll(".navbtn").forEach(x=>x.classList.toggle("active",x===b));const list=visibleMetrics();if(!list.some(m=>m.key===selected.key))selected=list[0];renderCards();renderChart();updateStats();checkAlert();}));
 $("playBtn").addEventListener("click",play);$("pauseBtn").addEventListener("click",stop);
 $("restartBtn").addEventListener("click",()=>{stop();index=0;renderCurrent();play();});
 $("speed").addEventListener("change",()=>{if(timer)play();});
+$("applyFilter").addEventListener("click",applyDateFilter);
+$("clearFilter").addEventListener("click",()=>{$("dateStart").value="";$("dateEnd").value="";rows=allRows.slice();stop();index=0;renderCurrent();updateStats();});
+$("exportBtn").addEventListener("click",exportData);
+$("setAlert").addEventListener("click",()=>{const v=$("alertLimit").value;alertLimit=v===""?null:Number(v);checkAlert();});
+$("clearAlert").addEventListener("click",()=>{alertLimit=null;$("alertLimit").value="";checkAlert();});
 window.addEventListener("resize",drawChart);
 load();
 </script>
